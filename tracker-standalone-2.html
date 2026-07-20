@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ledger</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #12181B;
+    color: #EDEFE9;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 20px 16px 60px;
+  }
+  .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; }
+  .wrap { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 18px; }
+  .card { background: #1B2328; border: 1px solid #2A3733; border-radius: 16px; padding: 20px; }
+  h2 { font-size: 15px; font-weight: 700; }
+  .muted { color: #6B7A74; }
+  .row { display: flex; justify-content: space-between; align-items: center; }
+  input, select {
+    background: #12181B; color: #EDEFE9; border: 1px solid #2A3733;
+    border-radius: 8px; padding: 9px 10px; font-size: 14px; outline: none; width: 100%;
+  }
+  input::placeholder { color: #5F6B66; }
+  button {
+    border: none; border-radius: 8px; padding: 9px 14px; font-size: 13px; font-weight: 700;
+    cursor: pointer;
+  }
+  .btn-primary { background: #3ECF8E; color: #12181B; }
+  .btn-ghost { background: #2A3733; color: #EDEFE9; }
+  .btn-icon { background: #2A3733; color: #EDEFE9; padding: 6px 10px; font-size: 14px; }
+  .btn-icon:disabled { opacity: .35; cursor: default; }
+  .toggle { flex: 1; background: transparent; color: #8A9490; border: 1px solid #2A3733; padding: 7px; font-size: 12px; border-radius: 8px; }
+  .toggle.active-expense { background: #C9784F; color: #12181B; }
+  .toggle.active-income { background: #3ECF8E; color: #12181B; }
+  .toggle.active-tab { background: #3ECF8E; color: #12181B; }
+  .flex-gap { display: flex; gap: 8px; }
+  ul { list-style: none; margin-top: 12px; max-height: 220px; overflow-y: auto; }
+  li.txn { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #232B2E; font-size: 14px; }
+  .flash { font-size: 12px; color: #3ECF8E; margin-top: 8px; }
+  .streak-badge { display: flex; align-items: center; gap: 5px; background: #22302A; color: #E8A33D; font-size: 12px; padding: 4px 9px; border-radius: 999px; }
+  .bar-track { width: 100%; height: 12px; background: #2A3733; border-radius: 999px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 999px; transition: width .5s ease, background .3s ease; }
+  #confetti-layer { position: fixed; inset: 0; pointer-events: none; z-index: 999; overflow: hidden; }
+  .confetti-piece { position: absolute; top: -10px; width: 8px; height: 8px; animation: fall linear forwards; }
+  @keyframes fall { to { transform: translateY(78vh) rotate(560deg); opacity: 0; } }
+  .goal-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .goal-name { font-size: 14px; font-weight: 600; }
+  .goal-sub { font-size: 12px; color: #6B7A74; }
+  @keyframes pulseRing {
+    0% { box-shadow: 0 0 0 0 rgba(62,207,142,.5); }
+    70% { box-shadow: 0 0 0 14px rgba(62,207,142,0); }
+    100% { box-shadow: 0 0 0 0 rgba(62,207,142,0); }
+  }
+  .pulseGoal { animation: pulseRing .9s ease-out; }
+  .month-bar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; height: 100%; cursor: pointer; }
+  .day-bar { flex: 1; min-width: 4px; border-radius: 2px 2px 0 0; }
+</style>
+</head>
+<body>
+<div id="confetti-layer"></div>
+<div class="wrap">
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <div class="mono muted" style="font-size:11px;letter-spacing:.5px;">THIS WEEK</div>
+        <div style="font-size:26px;font-weight:800;margin-top:2px;" id="remainingDisplay">$0</div>
+        <div class="mono" style="font-size:12px;margin-top:2px;" id="remainingSub">remaining of $150 budget</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+        <div class="mono" style="color:#3ECF8E;font-size:14px;">+$<span id="weekIncome">0</span></div>
+        <div class="mono" style="color:#C9784F;font-size:14px;">-$<span id="weekSpent">0</span></div>
+      </div>
+    </div>
+    <div class="flex-gap" style="margin-top:10px;align-items:center;">
+      <span class="mono muted" style="font-size:12px;">weekly budget</span>
+      <input type="number" id="budgetInput" style="width:80px;" class="mono" />
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="margin-bottom:2px;">
+      <h2>Today vs your average</h2>
+      <div class="streak-badge" id="streakBadge" style="display:none;">🔥 <span id="streakCount">0</span> days</div>
+    </div>
+    <div class="mono muted" style="font-size:12px;margin-bottom:10px;" id="avgLabel">log a few days to build your average</div>
+
+    <div class="bar-track"><div class="bar-fill" id="paceBar" style="width:0%;background:#3ECF8E;"></div></div>
+    <div class="row mono" style="font-size:11px;margin-top:6px;color:#5F6B66;">
+      <span id="todaySpendLabel">$0 spent today</span>
+      <span id="vsAvgLabel"></span>
+    </div>
+
+    <div style="position:relative;height:90px;margin-top:14px;">
+      <div id="avgLine" style="position:absolute;width:100%;border-top:1px dashed #4A5A54;"></div>
+      <div id="pulseChart" style="display:flex;align-items:flex-end;justify-content:space-between;height:100%;gap:6px;position:relative;"></div>
+    </div>
+
+    <div class="flash" id="flashMsg"></div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="margin-bottom:12px;">
+      <h2>History</h2>
+      <span class="mono muted" style="font-size:11px;">last 6 months</span>
+    </div>
+
+    <div style="position:relative;height:64px;">
+      <div id="monthTrend" style="display:flex;align-items:flex-end;justify-content:space-between;height:100%;gap:6px;"></div>
+    </div>
+
+    <div class="row" style="margin-top:14px;margin-bottom:10px;">
+      <button class="btn-icon" id="prevMonthBtn" onclick="shiftMonth(-1)">←</button>
+      <div style="text-align:center;">
+        <div style="font-size:14px;font-weight:700;" id="monthLabel">—</div>
+      </div>
+      <button class="btn-icon" id="nextMonthBtn" onclick="shiftMonth(1)">→</button>
+    </div>
+
+    <div class="row" style="margin-bottom:10px;">
+      <div>
+        <div class="mono muted" style="font-size:10px;">SPENT</div>
+        <div class="mono" style="font-size:15px;color:#C9784F;" id="monthSpent">$0</div>
+      </div>
+      <div>
+        <div class="mono muted" style="font-size:10px;">INCOME</div>
+        <div class="mono" style="font-size:15px;color:#3ECF8E;" id="monthIncome">$0</div>
+      </div>
+      <div style="text-align:right;">
+        <div class="mono muted" style="font-size:10px;">DAILY AVG</div>
+        <div class="mono" style="font-size:15px;" id="monthAvg">$0</div>
+      </div>
+    </div>
+
+    <div style="position:relative;height:70px;">
+      <div id="monthDayChart" style="display:flex;align-items:flex-end;height:100%;gap:2px;"></div>
+    </div>
+  </div>
+
+  <div class="card" id="goalsCard">
+    <div class="row" style="margin-bottom:14px;">
+      <h2>Savings pipeline</h2>
+      <span class="mono muted" style="font-size:12px;" id="goalsTotal">$0 / $0</span>
+    </div>
+    <div id="goalsList"></div>
+    <div class="flex-gap" style="margin-top:6px;">
+      <input type="number" id="savingsAmt" placeholder="Amount to save" />
+      <button class="btn-primary" onclick="addSavings()">+ Save</button>
+    </div>
+    <div class="mono" style="font-size:11px;margin-top:6px;color:#5F6B66;">
+      Amount fills goals in order — car doesn't fill until iCollege is done.
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-bottom:10px;">Log a transaction</h2>
+    <div class="flex-gap" style="margin-bottom:8px;">
+      <button class="toggle active-expense" id="btnExpense" onclick="setTxnType('expense')">Expense</button>
+      <button class="toggle" id="btnIncome" onclick="setTxnType('income')">Income</button>
+    </div>
+    <div class="flex-gap">
+      <input type="text" id="txnDesc" placeholder="What was it?" style="flex:1.4;" />
+      <input type="number" id="txnAmt" placeholder="$" />
+      <button class="btn-ghost" onclick="addTxn()">+</button>
+    </div>
+    <ul id="txnList"></ul>
+  </div>
+
+</div>
+
+<script>
+  const STORAGE_KEY = "ledger-state-html-v1";
+  const DEFAULT_GOALS = [
+    { id: "icollege", name: "iCollege", target: 7700, current: 0 },
+    { id: "car", name: "Car", target: 8000, current: 0 },
+    { id: "nepal", name: "Nepal", target: 5000, current: 0 },
+    { id: "backup", name: "Backup", target: 5000, current: 0 },
+  ];
+  const CONFETTI_COLORS = ["#3ECF8E", "#8FE0B8", "#E8A33D", "#C9784F", "#EDEFE9"];
+  const UNDER_AVG_MESSAGES = [
+    "Nice — under average today.",
+    "That's a green day. Keep it rolling.",
+    "Cheaper than usual. The rings say thanks.",
+    "Below average again. Habit forming.",
+    "Quiet wallet, happy goals.",
+  ];
+  const INCOME_MESSAGES = [
+    "Cha-ching. Logged.",
+    "Money in. Pipeline's fuller now.",
+    "Income noted — goals just got closer.",
+  ];
+  const MONTHS_BACK = 5; // plus current month = 6 months of history total
+
+  let state = {
+    goals: DEFAULT_GOALS.map(g => ({ ...g })),
+    txns: [],
+    weeklyBudget: 150,
+  };
+  let txnType = "expense";
+  let monthOffset = 0; // 0 = current month, up to MONTHS_BACK
+
+  const fmt = (n) => Math.round(n).toLocaleString("en-AU");
+  const dayKey = (ts) => new Date(ts).toISOString().slice(0, 10);
+  const monthKeyOf = (ts) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+  const todayKey = () => dayKey(Date.now());
+  const uid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+
+  function monthKeyForOffset(offset) {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - offset);
+    return { key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, date: d };
+  }
+
+  async function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.goals) state.goals = parsed.goals;
+        if (parsed.txns) state.txns = parsed.txns;
+        if (parsed.weeklyBudget) state.weeklyBudget = parsed.weeklyBudget;
+      }
+    } catch (e) {
+      // nothing saved yet, use defaults
+    }
+  }
+
+  async function saveState() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      // ignore save errors silently, UI still works this session
+    }
+  }
+
+  function dailyTotals(txns) {
+    const map = {};
+    txns.forEach(t => {
+      if (t.type !== "expense") return;
+      const k = dayKey(t.date);
+      map[k] = (map[k] || 0) + t.amount;
+    });
+    return map;
+  }
+
+  function computeStreak(txns, fallbackAvg) {
+    const totals = dailyTotals(txns);
+    const days = Object.keys(totals).sort();
+    const tKey = todayKey();
+    const priorForToday = days.filter(d => d !== tKey);
+    const avg = priorForToday.length > 0
+      ? priorForToday.reduce((s, d) => s + totals[d], 0) / priorForToday.length
+      : fallbackAvg;
+    const todaySpend = totals[tKey] || 0;
+
+    if (days.length === 0) return { streak: 0, avg: fallbackAvg, todaySpend: 0 };
+
+    let streak = 0;
+    for (let i = days.length - 1; i >= 0; i--) {
+      const key = days[i];
+      if (key === tKey && totals[key] === 0) continue;
+      const priors = days.slice(0, i);
+      const priorAvg = priors.length > 0 ? priors.reduce((s, d) => s + totals[d], 0) / priors.length : fallbackAvg;
+      if (totals[key] < priorAvg) streak++; else break;
+    }
+    return { streak, avg, todaySpend };
+  }
+
+  function allocateWaterfall(goals, amount) {
+    let remaining = amount;
+    const next = goals.map(g => ({ ...g }));
+    for (const g of next) {
+      if (remaining <= 0) break;
+      const space = g.target - g.current;
+      if (space > 0) {
+        const add = Math.min(space, remaining);
+        g.current += add;
+        remaining -= add;
+      }
+    }
+    return { goals: next, leftover: remaining };
+  }
+
+  function ringSvg(pct, locked, active, size) {
+    size = size || 52;
+    const stroke = 5;
+    const r = (size - stroke) / 2;
+    const c = 2 * Math.PI * r;
+    const offset = c - (pct / 100) * c;
+    const color = locked ? "#4A5A54" : active ? "#3ECF8E" : "#8FE0B8";
+    const label = locked ? "🔒" : pct >= 100 ? "✓" : Math.round(pct) + "%";
+    const labelColor = pct >= 100 && !locked ? "#3ECF8E" : "#EDEFE9";
+    return `
+      <svg width="${size}" height="${size}">
+        <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="#2A3733" stroke-width="${stroke}" />
+        <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}"
+          stroke-dasharray="${c}" stroke-dashoffset="${offset}" stroke-linecap="round"
+          transform="rotate(-90 ${size/2} ${size/2})" style="transition: stroke-dashoffset .6s cubic-bezier(.4,0,.2,1);" />
+        <text x="50%" y="53%" text-anchor="middle" dominant-baseline="middle" fill="${labelColor}" font-size="12" font-weight="700">${label}</text>
+      </svg>`;
+  }
+
+  function fireConfetti() {
+    const layer = document.getElementById("confetti-layer");
+    for (let i = 0; i < 22; i++) {
+      const piece = document.createElement("div");
+      piece.className = "confetti-piece";
+      const left = 6 + Math.random() * 88;
+      const duration = 0.9 + Math.random() * 0.6;
+      const delay = Math.random() * 0.25;
+      const color = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+      const round = Math.random() > 0.5;
+      piece.style.left = left + "%";
+      piece.style.background = color;
+      piece.style.borderRadius = round ? "50%" : "2px";
+      piece.style.animationDuration = duration + "s";
+      piece.style.animationDelay = delay + "s";
+      layer.appendChild(piece);
+      setTimeout(() => piece.remove(), (duration + delay) * 1000 + 200);
+    }
+  }
+
+  let flashTimer = null;
+  function showFlash(msg) {
+    const el = document.getElementById("flashMsg");
+    el.textContent = "✨ " + msg;
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { el.textContent = ""; }, 2400);
+  }
+
+  function setTxnType(type) {
+    txnType = type;
+    document.getElementById("btnExpense").className = "toggle" + (type === "expense" ? " active-expense" : "");
+    document.getElementById("btnIncome").className = "toggle" + (type === "income" ? " active-income" : "");
+  }
+
+  function shiftMonth(dir) {
+    const next = monthOffset - dir; // arrow right (dir=1) moves toward present, so decrease offset
+    if (next < 0 || next > MONTHS_BACK) return;
+    monthOffset = next;
+    render();
+  }
+  window.shiftMonth = shiftMonth;
+
+  function addSavings() {
+    const input = document.getElementById("savingsAmt");
+    const amt = parseFloat(input.value);
+    if (isNaN(amt) || amt <= 0) return;
+    const wasComplete = state.goals.map(g => g.current >= g.target);
+    const { goals, leftover } = allocateWaterfall(state.goals, amt);
+    state.goals = goals;
+    input.value = "";
+
+    const justCompleted = goals.some((g, i) => g.current >= g.target && !wasComplete[i]);
+    if (justCompleted) {
+      fireConfetti();
+      const card = document.getElementById("goalsCard");
+      card.classList.add("pulseGoal");
+      setTimeout(() => card.classList.remove("pulseGoal"), 900);
+      showFlash("Goal unlocked — next in line 🎯");
+    } else if (leftover > 0) {
+      fireConfetti();
+      showFlash(`All goals funded — $${fmt(leftover)} left over`);
+    } else {
+      showFlash(`Allocated $${fmt(amt)}`);
+    }
+    saveState();
+    render();
+  }
+
+  function addTxn() {
+    const descEl = document.getElementById("txnDesc");
+    const amtEl = document.getElementById("txnAmt");
+    const amt = parseFloat(amtEl.value);
+    if (isNaN(amt) || amt <= 0) return;
+    const entry = {
+      id: uid(),
+      type: txnType,
+      desc: descEl.value || (txnType === "income" ? "Income" : "Expense"),
+      amount: amt,
+      date: Date.now(),
+    };
+    state.txns = [entry, ...state.txns];
+    descEl.value = "";
+    amtEl.value = "";
+
+    if (txnType === "income") {
+      showFlash(INCOME_MESSAGES[Math.floor(Math.random() * INCOME_MESSAGES.length)]);
+    } else {
+      const { avg, todaySpend } = computeStreak(state.txns, state.weeklyBudget / 7);
+      if (avg > 0 && todaySpend < avg) {
+        fireConfetti();
+        showFlash(UNDER_AVG_MESSAGES[Math.floor(Math.random() * UNDER_AVG_MESSAGES.length)]);
+      } else {
+        showFlash("Logged.");
+      }
+    }
+    saveState();
+    render();
+  }
+
+  function deleteTxn(id) {
+    state.txns = state.txns.filter(t => t.id !== id);
+    saveState();
+    render();
+  }
+  window.deleteTxn = deleteTxn;
+  window.addSavings = addSavings;
+  window.addTxn = addTxn;
+  window.setTxnType = setTxnType;
+
+  function renderHistory() {
+    // 6-month trend (oldest -> newest, left to right)
+    const months = [];
+    for (let i = MONTHS_BACK; i >= 0; i--) {
+      const { key, date } = monthKeyForOffset(i);
+      const spent = state.txns
+        .filter(t => t.type === "expense" && monthKeyOf(t.date) === key)
+        .reduce((s, t) => s + t.amount, 0);
+      months.push({ key, date, spent, offset: i });
+    }
+    const maxSpent = Math.max(...months.map(m => m.spent), 1);
+    const trendEl = document.getElementById("monthTrend");
+    trendEl.innerHTML = months.map(m => {
+      const h = Math.max((m.spent / maxSpent) * 100, m.spent > 0 ? 6 : 3);
+      const selected = m.offset === monthOffset;
+      const color = selected ? "#EDEFE9" : "#3ECF8E";
+      const label = m.date.toLocaleDateString("en-AU", { month: "short" });
+      return `<div class="month-bar" onclick="selectMonth(${m.offset})">
+        <div style="width:100%;height:${h}%;background:${color};border-radius:3px;transition:height .4s ease;"></div>
+        <span style="font-size:9px;color:${selected ? '#EDEFE9' : '#5F6B66'};font-family:monospace;">${label}</span>
+      </div>`;
+    }).join("");
+
+    // selected month detail
+    const { key, date } = monthKeyForOffset(monthOffset);
+    document.getElementById("monthLabel").textContent = date.toLocaleDateString("en-AU", { month: "long", year: "numeric" });
+    document.getElementById("prevMonthBtn").disabled = monthOffset >= MONTHS_BACK;
+    document.getElementById("nextMonthBtn").disabled = monthOffset <= 0;
+
+    const monthTxns = state.txns.filter(t => monthKeyOf(t.date) === key);
+    const spent = monthTxns.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
+    const income = monthTxns.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
+    document.getElementById("monthSpent").textContent = "$" + fmt(spent);
+    document.getElementById("monthIncome").textContent = "$" + fmt(income);
+
+    const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+    const dayTotals = {};
+    monthTxns.filter(t => t.type === "expense").forEach(t => {
+      const d = new Date(t.date).getDate();
+      dayTotals[d] = (dayTotals[d] || 0) + t.amount;
+    });
+    const daysWithData = Object.keys(dayTotals).length;
+    const avgPerDay = daysWithData > 0 ? spent / daysWithData : 0;
+    document.getElementById("monthAvg").textContent = "$" + fmt(avgPerDay);
+
+    const maxDay = Math.max(...Object.values(dayTotals), 1);
+    const dayChart = document.getElementById("monthDayChart");
+    let bars = "";
+    for (let d = 1; d <= daysInMonth; d++) {
+      const v = dayTotals[d] || 0;
+      const h = Math.max((v / maxDay) * 100, v > 0 ? 6 : 2);
+      bars += `<div class="day-bar" style="height:${h}%;background:${v > 0 ? '#C9784F' : '#2A3733'};" title="Day ${d}: $${fmt(v)}"></div>`;
+    }
+    dayChart.innerHTML = bars;
+  }
+
+  function selectMonth(offset) {
+    monthOffset = offset;
+    render();
+  }
+  window.selectMonth = selectMonth;
+
+  function render() {
+    const now = Date.now();
+    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+    const weekTxns = state.txns.filter(t => t.date >= sevenDaysAgo);
+    const weekSpent = weekTxns.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
+    const weekIncome = weekTxns.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
+    const remaining = state.weeklyBudget - weekSpent;
+
+    document.getElementById("remainingDisplay").textContent = "$" + fmt(remaining);
+    document.getElementById("remainingSub").textContent = `remaining of $${fmt(state.weeklyBudget)} budget`;
+    document.getElementById("remainingSub").style.color = remaining < 0 ? "#E8A33D" : "#6B7A74";
+    document.getElementById("weekIncome").textContent = fmt(weekIncome);
+    document.getElementById("weekSpent").textContent = fmt(weekSpent);
+    document.getElementById("budgetInput").value = state.weeklyBudget;
+
+    const { streak, avg, todaySpend } = computeStreak(state.txns, state.weeklyBudget / 7);
+    const underToday = avg > 0 ? todaySpend < avg : null;
+    document.getElementById("avgLabel").textContent = avg > 0 ? `your average day: $${fmt(avg)}` : "log a few days to build your average";
+
+    const streakBadge = document.getElementById("streakBadge");
+    if (streak > 0) {
+      streakBadge.style.display = "flex";
+      document.getElementById("streakCount").textContent = streak;
+    } else {
+      streakBadge.style.display = "none";
+    }
+
+    const pacePct = avg > 0 ? Math.min((todaySpend / avg) * 100, 160) : 0;
+    const paceBar = document.getElementById("paceBar");
+    paceBar.style.width = Math.min(pacePct, 100) + "%";
+    paceBar.style.background = pacePct <= 100 ? "#3ECF8E" : "#C9784F";
+    document.getElementById("todaySpendLabel").textContent = `$${fmt(todaySpend)} spent today`;
+    const vsAvgLabel = document.getElementById("vsAvgLabel");
+    if (avg > 0) {
+      vsAvgLabel.textContent = underToday ? `$${fmt(avg - todaySpend)} under avg` : `$${fmt(todaySpend - avg)} over avg`;
+      vsAvgLabel.style.color = underToday ? "#3ECF8E" : "#C9784F";
+    } else {
+      vsAvgLabel.textContent = "";
+    }
+
+    // pulse chart, last 7 days
+    const totals = dailyTotals(state.txns);
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now - i * 24 * 60 * 60 * 1000);
+      const key = dayKey(d.getTime());
+      days.push({
+        key,
+        label: d.toLocaleDateString("en-AU", { weekday: "narrow" }),
+        total: totals[key] || 0,
+        isToday: i === 0,
+      });
+    }
+    const max = Math.max(avg * 1.6, ...days.map(d => d.total), 1);
+    const avgY = 100 - Math.min((avg / max) * 100, 100);
+    document.getElementById("avgLine").style.top = avgY + "%";
+    const chart = document.getElementById("pulseChart");
+    chart.innerHTML = days.map(d => {
+      const h = Math.max((d.total / max) * 100, d.total > 0 ? 4 : 2);
+      const under = d.total <= avg;
+      const color = d.isToday ? "#EDEFE9" : (under ? "#3ECF8E" : "#C9784F");
+      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%;">
+        <div style="width:100%;height:${h}%;background:${color};border-radius:3px;transition:height .4s ease;"></div>
+        <span style="font-size:9px;color:${d.isToday ? '#EDEFE9' : '#5F6B66'};">${d.label}</span>
+      </div>`;
+    }).join("");
+
+    renderHistory();
+
+    // goals
+    const totalSaved = state.goals.reduce((s, g) => s + g.current, 0);
+    const totalTarget = state.goals.reduce((s, g) => s + g.target, 0);
+    document.getElementById("goalsTotal").textContent = `$${fmt(totalSaved)} / $${fmt(totalTarget)}`;
+    const nextGoalIdx = state.goals.findIndex(g => g.current < g.target);
+    document.getElementById("goalsList").innerHTML = state.goals.map((g, i) => {
+      const pct = Math.min((g.current / g.target) * 100, 100);
+      const locked = i > nextGoalIdx && nextGoalIdx !== -1;
+      const active = i === nextGoalIdx;
+      return `<div class="goal-row">
+        ${ringSvg(pct, locked, active, 52)}
+        <div>
+          <div class="goal-name" style="color:${locked ? '#5F6B66' : '#EDEFE9'};">${g.name}</div>
+          <div class="goal-sub mono">$${fmt(g.current)} of $${fmt(g.target)}</div>
+        </div>
+      </div>`;
+    }).join("");
+
+    // transactions
+    const list = document.getElementById("txnList");
+    if (state.txns.length === 0) {
+      list.innerHTML = `<li class="mono" style="color:#5F6B66;font-size:12px;padding:8px 0;">Nothing logged yet.</li>`;
+    } else {
+      list.innerHTML = state.txns.map(t => `
+        <li class="txn">
+          <div>
+            <div>${t.desc}</div>
+            <div class="mono" style="font-size:11px;color:#5F6B66;">${new Date(t.date).toLocaleDateString("en-AU", { day: "2-digit", month: "short" })}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span class="mono" style="color:${t.type === "income" ? "#3ECF8E" : "#C9784F"};">${t.type === "income" ? "+" : "-"}$${fmt(t.amount)}</span>
+            <button class="btn-ghost" style="padding:4px 8px;font-size:11px;" onclick="deleteTxn('${t.id}')">✕</button>
+          </div>
+        </li>
+      `).join("");
+    }
+  }
+
+  document.getElementById("budgetInput").addEventListener("change", (e) => {
+    const v = parseFloat(e.target.value);
+    state.weeklyBudget = isNaN(v) ? 0 : v;
+    saveState();
+    render();
+  });
+
+  (async function init() {
+    await loadState();
+    render();
+  })();
+</script>
+</body>
+</html>
